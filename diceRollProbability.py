@@ -1,76 +1,64 @@
 import random
 
-def rollDice(bonus=0, diceType=20, diceAmount=1, playerAdvantage=False, playerDisadvantage=False):
-  if playerAdvantage == playerDisadvantage:
-    return bonus + sum(random.randint(1, diceType) for _ in range(diceAmount))
-  else:
-    rolls = [sum(random.randint(1, diceType) for _ in range(diceAmount)) for _ in range(2)]
-    return bonus + (max(rolls) if playerAdvantage else min(rolls))
+def rollDice(diceAmount=1, diceType=20, bonus=0, playerAdvantage=False, playerDisadvantage=False):
+    if playerAdvantage == playerDisadvantage:
+        return bonus + sum(random.randint(1, diceType) for _ in range(diceAmount))
+    else:
+        rolls = [sum(random.randint(1, diceType) for _ in range(diceAmount)) for _ in range(2)]
+        return bonus + (max(rolls) if playerAdvantage else min(rolls))
 
-def inquire():
-    questions = ["What will the opposing bonus be?", 
-                 "What will the opposing dice type be?", 
-                 "How many dice will the opponent roll?"]
-    """
-    questions = ["Does the player have advantage? (y/n)", 
-                 "Does the player have disadvantage? (y/n)", 
-                 "What will the opposing bonus be?", 
-                 "What will the opposing dice type be?", 
-                 "How many dice will the opponent roll?"]
-    """
-    answers = {}
+def parseNotation(notation):
+    diceAmount, rest = notation.split('d')
+    diceType, bonus = rest.split('+') if '+' in rest else (rest.split('-')[0], '-' + rest.split('-')[1])
+    return int(diceAmount), int(diceType), int(bonus)
 
-    for question in questions:
-        print(question)
-        if question.endswith("(y/n)"):
-          answers[question] = input().lower() == 'y'
-        else:
-          answers[question] = int(input())
+def measure(bonus, DC, reps=100_000):
+    if isinstance(DC, tuple):
+        diceAmount, diceType, dc_bonus = DC
+        beat = sum(1 for _ in range(reps) if rollDice(1, 20, bonus) >= rollDice(diceAmount, diceType, dc_bonus))
+    else:
+        beat = sum(1 for _ in range(reps) if rollDice(1, 20, bonus) >= DC)
+    return beat / reps
 
-    return answers
+def calculate_winnings(success_rates, winnings):
+    expected_winnings = 0
+    for i in range(4):
+        prob = 1
+        for j in range(3):
+            if j < i:
+                prob *= success_rates[j]
+            else:
+                prob *= 1 - success_rates[j]
+        expected_winnings += prob * winnings[i]
 
-def measure(bonus, answers, reps=100_000):
-  beat = sum(1 for _ in range(reps) if rollDice(bonus, 20, 1) # Player roll is assumed to be 1d20+bonus 
-                                                >= rollDice(answers["What will the opposing bonus be?"], 
-                                                            answers["What will the opposing dice type be?"], 
-                                                            answers["How many dice will the opponent roll?"]))
-  """
-  beat = sum(1 for _ in range(reps) if rollDice(bonus, 
-                                                20,  # Dice type is assumed to be 20
-                                                1,  # Dice amount is assumed to be 1
-                                                answers["Does the player have advantage? (y/n)"], 
-                                                answers["Does the player have disadvantage? (y/n)"]) 
-                                                >= rollDice(answers["What will the opposing bonus be?"], 
-                                                            answers["What will the opposing dice type be?"], 
-                                                            answers["How many dice will the opponent roll?"]))
-  """
-  return beat / reps
+    return expected_winnings
 
-def measure_three_checks(bet, bonuses, gambling):
-  answers = inquire()
-  if gambling: # If true, gambling, if false, pit fighting
-    winnings = [-bet, .5*bet, 1.5*bet, 2*bet]
-  else:
-    winnings = [0, 50, 100, 200]
-  success_rates = [measure(bonus, answers) for bonus in bonuses]
+def measure_three_checks(bet, bonuses, activity, DC):
+    if activity == 3:
+        bet_mapping = {10: 50, 15: 100, 20: 200, 25: 1000}
+        bet = bet_mapping.get(DC, 50)
+    winnings_mapping = {
+        1: [-bet, .5*bet, 1.5*bet, 2*bet],
+        2: [0, 50, 100, 200],
+        3: [-bet, 0, .5*bet, bet]
+    }
+    winnings = winnings_mapping.get(activity, [0, 0, 0, 0])
+    success_rates = [measure(bonus, DC) for bonus in bonuses]
+    return calculate_winnings(success_rates, winnings)
 
-  # Calculate expected winnings
-  expected_winnings = 0
-  for i in range(4):  # for each possible number of successful checks
-    prob = 1
-    for j in range(3):  # calculate the probability of that number of successful checks
-      if j < i:  # success
-        prob *= success_rates[j]
-      else:  # failure
-        prob *= 1 - success_rates[j]
-    expected_winnings += prob * winnings[i]
+prof = 3
+ex = 2 * prof
+activity = 1 # 1 = gambling, 2 = drinking, 3 = crime
+bonuses = [4+ex, 4+ex, 2+prof]
+DC = parseNotation("2d10+5")
 
-  return expected_winnings
-
-prof = 3 # Proficiency bonus
-ex = 2 * prof # Expertise bonus
-activity = True # True for gambling, False for pit fighting
+# Activity specific values
+crimeDC = 20
 bet = 100
-bonuses = [4+ex, 4+ex, 4+ex]  # For gambling, it's insight, intimidation, and deception
-avg_winnings = measure_three_checks(bet, bonuses, activity)
+
+if activity != 0:
+    avg_winnings = measure_three_checks(bet, bonuses, activity, DC if activity != 3 else crimeDC)
+else:
+    avg_winnings = sum(measure_three_checks(bet, bonuses, act, DC if act != 3 else crimeDC) for act in range(1, 4)) / 3
+
 print(f"The average expected winnings are {avg_winnings}")
